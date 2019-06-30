@@ -1,14 +1,7 @@
+const $toml = require("toml");
 const $path = require("path");
 const $child = require("child_process");
 const $util = require("./util");
-const $wasm_bindgen = require("./wasm-bindgen");
-
-
-async function get_name(cwd) {
-    // TODO figure out a better way to get the current name
-    const json = await $util.exec("cargo read-manifest", { cwd });
-    return JSON.parse(json).name;
-}
 
 
 async function build(cwd, isDebug, name) {
@@ -16,7 +9,6 @@ async function build(cwd, isDebug, name) {
         "build",
         "--lib",
         "--package", name,
-        "--color", "always",
         "--target", "wasm32-unknown-unknown"
     ];
 
@@ -33,18 +25,33 @@ async function build(cwd, isDebug, name) {
 }
 
 
+async function wasm_bindgen(cwd, root, isDebug, name, target_dir) {
+    const args = [
+        "--out-dir", $path.join(target_dir, "wasm-bindgen"),
+        "--target", "bundler",
+        "--no-typescript",
+        $path.join(
+            target_dir,
+            "wasm32-unknown-unknown",
+            (isDebug ? "debug" : "release"),
+            name + ".wasm"
+        )
+    ];
+
+    await $util.wait($child.spawn("wasm-bindgen", args, { cwd: root, stdio: "inherit" }));
+
+    return $path.join($path.relative(cwd, root), target_dir, "wasm-bindgen", name + ".js");
+}
+
+
 // TODO this.sourceMap
 // TODO this.target
-async function run(cx) {
+async function run(cx, source) {
     const cwd = cx.context;
     const root = cx.rootContext;
     const isDebug = (cx.mode !== "production");
 
-    const target_dir = $path.relative(root, "target");
-
-    // TODO figure out a better way to handle this
-    cx.addContextDependency($path.join(cwd, "src"));
-
+    // This is used to cancel things if the same file is compiled multiple times quickly
     const token = $util.acquire_token(cx.resource);
 
     try {
@@ -53,11 +60,19 @@ async function run(cx) {
                 return null;
             }
 
-            const name = await get_name(cwd);
+            const toml = $toml.parse(source);
 
-            if (token.cancelled) {
-                return null;
-            }
+            const name = toml.package.name;
+
+            // TODO figure out a better way to handle these
+            // TODO test whether this causes any issues with file watching, or whether these should be moved to the top
+
+            // When compiling a sub-crate (which is inside of a workspace),
+            // this will cause it to watch the root Cargo.toml
+            cx.addDependency($path.join(root, "Cargo.toml"));
+
+            // This will cause it to watch for any changes to the src files
+            cx.addContextDependency($path.join(cwd, "src"));
 
             await build(cwd, isDebug, name);
 
@@ -65,13 +80,15 @@ async function run(cx) {
                 return null;
             }
 
-            const filepath = await $wasm_bindgen.build(cwd, root, isDebug, name, target_dir);
+            const target_dir = $path.relative(root, "target");
+
+            const filepath = await wasm_bindgen(cwd, root, isDebug, name, target_dir);
 
             if (token.cancelled) {
                 return null;
             }
 
-            return 'import(' + JSON.stringify("./" + filepath) + ').then(console.error);';
+            return 'import(' + JSON.stringify("./" + filepath) + ').catch(console.error);';
         });
 
     } finally {
@@ -79,10 +96,10 @@ async function run(cx) {
     }
 }
 
-module.exports = function () {
+module.exports = function (source) {
     var callback = this.async();
 
-    run(this)
+    run(this, source)
         .then((x) => {
             callback(null, x);
         })
