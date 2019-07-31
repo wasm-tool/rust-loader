@@ -25,7 +25,27 @@ async function build(cwd, isDebug, name) {
 }
 
 
-async function wasm_bindgen(cwd, root, isDebug, name, target_dir) {
+async function wasm_pack(cwd, isDebug, name, target_dir) {
+    const args = [
+        // TODO adjust based on Webpack's error report level
+        "--log-level", "error",
+        "build",
+        "--no-typescript",
+        "--target", "bundler",
+        "--out-dir", $path.join(target_dir, "wasm-pack"),
+        "--out-name", name,
+        (isDebug ? "--dev" : "--release")
+    ];
+
+    await $util.wait($child.spawn("wasm-pack", args, { cwd, stdio: "inherit" }));
+
+    return $path.join(target_dir, "wasm-pack", name + ".js");
+}
+
+
+async function wasm_bindgen(cwd, isDebug, name, target_dir) {
+    await build(cwd, isDebug, name);
+
     const args = [
         "--out-dir", $path.join(target_dir, "wasm-bindgen"),
         "--target", "bundler",
@@ -38,9 +58,9 @@ async function wasm_bindgen(cwd, root, isDebug, name, target_dir) {
         )
     ];
 
-    await $util.wait($child.spawn("wasm-bindgen", args, { cwd: root, stdio: "inherit" }));
+    await $util.wait($child.spawn("wasm-bindgen", args, { cwd, stdio: "inherit" }));
 
-    return $path.join($path.relative(cwd, root), target_dir, "wasm-bindgen", name + ".js");
+    return $path.join(target_dir, "wasm-bindgen", name + ".js");
 }
 
 
@@ -74,15 +94,10 @@ async function run(cx, source) {
             // This will cause it to watch for any changes to the src files
             cx.addContextDependency($path.join(cwd, "src"));
 
-            await build(cwd, isDebug, name);
+            // TODO retrieve the actual target directory
+            const target_dir = $path.join($path.relative(cwd, root), "target");
 
-            if (token.cancelled) {
-                return null;
-            }
-
-            const target_dir = $path.relative(root, "target");
-
-            const filepath = await wasm_bindgen(cwd, root, isDebug, name, target_dir);
+            const filepath = await wasm_pack(cwd, isDebug, name, target_dir);
 
             if (token.cancelled) {
                 return null;
