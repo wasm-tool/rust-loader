@@ -8,15 +8,46 @@
 yarn add --dev @wasm-tool/rust-loader
 ```
 
-### `wasm-bindgen`
-
-You need to run `cargo install wasm-bindgen-cli -f --version {VERSION}` to install wasm-bindgen.
-
-The `{VERSION}` must match the version of `wasm-bindgen` in your `Cargo.lock`.
-
 ## Usage
 
-Add the loader in your `webpack.config.js` and import the `Cargo.toml` file:
+It is *highly* recommended to use the [Rust Webpack Template](https://github.com/rustwasm/rust-webpack-template) to create a new Rust project.
+
+----
+
+But if you instead want to manually create the project yourself, follow these steps:
+
+Create a `Cargo.toml` file which has the `cdylib` crate type:
+
+```toml
+[package]
+name = "foo"
+version = "0.1.0"
+edition = "2018"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+wasm-bindgen = "0.2.48"
+
+[dependencies.web-sys]
+version = "0.3.25"
+features = ["console"]
+```
+
+Then create a `src/lib.rs` file:
+
+```rust
+use wasm_bindgen::prelude::*;
+use web_sys::console;
+
+#[wasm_bindgen(start)]
+pub fn main_js() {
+    console::log_1(&JsValue::from("Hello world!"));
+}
+```
+
+Now add the loader to your `webpack.config.js` and import the `Cargo.toml` file:
 
 ```js
 module.exports = {
