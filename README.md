@@ -35,7 +35,7 @@ version = "0.3.25"
 features = ["console"]
 ```
 
-Then create a `src/lib.rs` file:
+And create a `src/lib.rs` file:
 
 ```rust
 use wasm_bindgen::prelude::*;
